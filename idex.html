@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The Resource Claim Axiom Simulator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #3b82f6; --nature: #10b981; }
+        body { font-family: 'Courier New', monospace; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+        .card { background: var(--card); padding: 20px; border-radius: 8px; border: 1px solid #334155; transition: all 0.8s ease; position: relative; }
+        .controls { background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 30px; border-left: 8px solid var(--accent); }
+        .scenario-btn { background: #475569; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; margin: 5px; }
+        .scenario-btn:hover { background: var(--accent); }
+        .stats { font-size: 0.85em; margin-top: 10px; }
+        .bar { width: 100%; background: #334155; height: 12px; border-radius: 6px; overflow: hidden; margin: 10px 0; }
+        .bar-fill { height: 100%; transition: width 1s; }
+        #journal { background: #000; color: #10b981; padding: 15px; border-radius: 4px; height: 150px; overflow-y: auto; font-size: 0.8em; margin-top: 20px; border: 1px solid #10b981; }
+        .warning { color: #ef4444; font-weight: bold; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <h1>🚀 The Resource Claim Axiom</h1>
+    <p><i>"Money is a Path-Literal to resources. Wealth is the absence of entropy."</i></p>
+    <div id="status-bar" class="warning"></div>
+    <hr style="border: 0; border-top: 1px solid #334155; margin: 15px 0;">
+    <button class="scenario-btn" style="background:var(--accent)" onclick="executeTx('LOAN', 1000)">+ Bank Credit (Nominal)</button>
+    <button class="scenario-btn" style="background:#b91c1c" onclick="executeTx('EXTRACT', 200)">- Resource Extraction</button>
+    <button class="scenario-btn" onclick="loadScenario('SPAIN')">📍 Scenario: Spain (Water/Phosphorus)</button>
+    <button class="scenario-btn" onclick="loadScenario('MUSK')">🔴 Scenario: Mars Insolvency</button>
+</div>
+
+<div class="grid" id="dashboard"></div>
+
+<div id="journal"><b>Path-Literal Log (SQLite Journal):</b><br></div>
+
+<script>
+    let db;
+    let turn = 0;
+
+    async function init() {
+        const SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
+        db = new SQL.Database();
+        db.run(`
+            CREATE TABLE journal (id INTEGER PRIMARY KEY, type TEXT, path TEXT, acc TEXT, debit REAL, credit REAL, turn INTEGER);
+            INSERT INTO journal (type, acc, debit, credit, turn) VALUES ('INIT', 'bio_cap', 5000, 0, 0);
+            INSERT INTO journal (type, acc, debit, credit, turn) VALUES ('INIT', 'h_dep', 1000, 0, 0);
+        `);
+        render();
+    }
+
+    function book(type, path, acc, d, c) {
+        db.run("INSERT INTO journal (type, path, acc, debit, credit, turn) VALUES (?,?,?,?,?,?)", [type, path, acc, d, c, turn]);
+    }
+
+    function getBal(acc) {
+        const res = db.exec("SELECT SUM(debit) - SUM(credit) FROM journal WHERE acc = ?", [acc]);
+        return res[0].values[0][0] || 0;
+    }
+
+    function executeTx(type, val) {
+        turn++;
+        if (type === 'LOAN') {
+            const p = "[Bank] -> [HH:Claim]";
+            book(type, p, 'h_dep', val, 0);
+        } else if (type === 'EXTRACT') {
+            const p = "[HH:Claim] -> [Nature:Resource] -> [Entropy:CO2]";
+            book(type, p, 'atmo_co2', val * 0.7, 0);
+            book(type, p, 'bio_cap', 0, val * 0.4);
+            book(type, p, 'bio_fp', val, 0);
+        }
+        render();
+    }
+
+    function loadScenario(name) {
+        if(name === 'SPAIN') {
+            for(let i=0; i<5; i++) executeTx('EXTRACT', 300);
+            book('SCENARIO', '[Morocco:Phosphate] -> [Spain:Export]', 'h_dep', 500, 0);
+        } else if(name === 'MUSK') {
+            book('SCENARIO', '[Mars:Survival] -> [Claim:Collapse]', 'h_dep', 1000000, 0);
+            book('SCENARIO', '[Atmosphere:Death]', 'atmo_co2', 4500, 0);
+            book('SCENARIO', '[Nature:Extinct]', 'bio_cap', 0, 4800);
+        }
+        render();
+    }
+
+    function render() {
+        const hDep = getBal('h_dep');
+        const co2 = getBal('atmo_co2');
+        const cap = getBal('bio_cap');
+        const fp = getBal('bio_fp');
+        
+        const insects = Math.max(100 - (co2 / 45), 0);
+        const overshoot = fp / cap || 0;
+        const ins_premium = (100 - insects) * 5;
+
+        const opacity = Math.max(1 - (overshoot / 1.7) - ((100-insects)/200), 0.05);
+        const realClaim = hDep * opacity * (insects/100);
+
+        document.getElementById('dashboard').innerHTML = `
+            <div class="card" style="opacity: ${opacity}; filter: grayscale(${(1-opacity)*100}%);">
+                <h3>Households (Nominal Claims)</h3>
+                <p style="font-size: 2em;">${hDep.toFixed(0)} 💰</p>
+                <div class="stats">
+                    Real Value: ${realClaim.toFixed(0)} ⚖️<br>
+                    Entropy Tax: -${ins_premium.toFixed(0)} (Insurance)
+                </div>
+            </div>
+            <div class="card" style="border-top: 4px solid var(--nature);">
+                <h3>Biosphere & Insects</h3>
+                <div class="bar"><div class="bar-fill" style="width: ${insects}%; background: var(--nature);"></div></div>
+                <p>Resilience: ${insects.toFixed(1)}%</p>
+                <div class="stats">
+                    Biocapacity: ${cap.toFixed(0)}<br>
+                    Overshoot: ${overshoot.toFixed(2)}x
+                </div>
+            </div>
+            <div class="card" style="border-top: 4px solid #ef4444;">
+                <h3>Atmosphere (CO2)</h3>
+                <p>Level: ${co2.toFixed(0)} ppm</p>
+                <p class="stats">Status: ${co2 > 3000 ? 'CRITICAL' : 'STABLE'}</p>
+            </div>
+        `;
+
+        const log = db.exec("SELECT path FROM journal WHERE path IS NOT NULL ORDER BY id DESC LIMIT 5");
+        if(log[0]) document.getElementById('journal').innerHTML = "<b>Path-Literal Log:</b><br>" + log[0].values.join("<br>");
+        
+        if(insects < 10) document.getElementById('status-bar').innerText = "⚠️ SYSTEM COLLAPSE: CLAIM ON RESOURCES FAILED";
+        else document.getElementById('status-bar').innerText = "";
+    }
+
+    init();
+</script>
+</body>
+</html>
